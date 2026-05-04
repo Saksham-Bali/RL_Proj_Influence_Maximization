@@ -63,24 +63,28 @@ python -m pip install --upgrade pip setuptools wheel
 echo "[INFO] Installing core dependencies"
 pip install --no-cache-dir numpy scipy matplotlib tqdm networkx
 
-echo "[INFO] Installing CPU PyTorch"
-pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+TORCH_VERSION="${TORCH_VERSION:-2.5.1}"
+CUDA_TAG="${CUDA_TAG:-cu121}"
+PYG_WHL_URL="https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
 
-# Install torch_scatter / pyg_lib wheels that match the installed torch version.
-TORCH_WHL_TAG="$(python - <<'PY'
-import torch
-v = torch.__version__.split('+')[0]
-major, minor, patch = v.split('.')[:3]
-print(f"{major}.{minor}.{patch}")
-PY
-)"
+echo "[INFO] Installing CUDA-enabled PyTorch (${TORCH_VERSION}, ${CUDA_TAG})"
+pip install --no-cache-dir "torch==${TORCH_VERSION}" \
+  --index-url "https://download.pytorch.org/whl/${CUDA_TAG}"
 
-PYG_WHL_URL="https://data.pyg.org/whl/torch-${TORCH_WHL_TAG}+cpu.html"
 echo "[INFO] Installing PyG extension wheels from: ${PYG_WHL_URL}"
 pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster -f "$PYG_WHL_URL"
 
 echo "[INFO] Installing torch_geometric"
 pip install --no-cache-dir torch_geometric
+
+echo "[INFO] Torch/CUDA runtime check"
+python - <<'PY'
+import torch
+print(f"Torch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+PY
 
 # ---------- Pipeline execution ----------
 cd "$PROJECT_DIR"
@@ -101,6 +105,14 @@ for required in train_graphs_new train_comms_new test_graph_new.txt test_comms_n
 done
 
 echo "[INFO] Running training"
+python - <<'PY'
+import torch
+if torch.cuda.is_available():
+    print(f"[INFO] CUDA detected. Training will run on GPU: {torch.cuda.get_device_name(0)}")
+else:
+    print("[INFO] CUDA not detected. Training will run on CPU.")
+PY
+
 python main.py \
   --graph train_graphs_new \
   --community_path train_comms_new \
