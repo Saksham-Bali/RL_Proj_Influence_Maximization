@@ -371,7 +371,7 @@ cd ..
 python run_imm_celf.py
 ```
 
-> CELF is computationally infeasible on the full 800K-node test graph. Run on smaller subgraphs for comparison.
+> CELF is computationally infeasible on the full 350K-node test graph. Run on smaller subgraphs for comparison.
 
 ---
 
@@ -396,7 +396,7 @@ This generates 70 training subgraphs using concurrent multi-anchor BFS with Jacc
 The community feature vector has exactly 5 dimensions regardless of graph scale. This means the projection weights `Linear(5, 50)` learned on 12-community training graphs apply without modification to the 3500-community test graph. Dimension mismatch — the standard failure mode for cross-graph generalisation — is entirely avoided.
 
 ### Normalised Composite Reward
-Both terms in `r = α × (Δinf / N) + β × (Δcomm / C)` are normalised to [0, 1]. The reward scale is consistent whether the graph has 100 nodes or 800,000, enabling zero-shot transfer.
+Both terms in `r = α × (Δinf / N) + β × (Δcomm / C)` are normalised to [0, 1]. The reward scale is consistent whether the graph has 100 nodes or 350,000, enabling zero-shot transfer.
 
 ### Dynamic Novelty Flag (Column 4)
 At each RL step, column 4 of the community feature matrix is recomputed as `log1p(uncovered_comms_for_node)`. This causes the GNN to implicitly learn that selecting nodes with many uncovered communities yields high β reward, driving the policy toward diversity without any architectural changes.
