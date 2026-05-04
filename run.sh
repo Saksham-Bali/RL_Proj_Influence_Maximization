@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$ROOT_DIR/touplegdd"
+ARTIFACT_DIR="$ROOT_DIR/artifacts"
+LOG_DIR="$ARTIFACT_DIR/logs"
+OUT_DIR="$ARTIFACT_DIR/output"
+VENV_DIR="$ROOT_DIR/.venv"
+
+mkdir -p "$LOG_DIR" "$OUT_DIR"
+
+RUN_TS="$(date +"%Y%m%d_%H%M%S")"
+LOG_FILE="$LOG_DIR/run_${RUN_TS}.log"
+
+# Mirror all stdout/stderr to a timestamped logfile.
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "[INFO] Starting end-to-end pipeline at $(date -Iseconds)"
+echo "[INFO] Repository root: $ROOT_DIR"
+
+if [[ ! -d "$PROJECT_DIR" ]]; then
+  echo "[ERROR] Missing project directory: $PROJECT_DIR"
+  exit 1
+fi
+
+# ---------- System bootstrap (Ubuntu-friendly) ----------
+if ! command -v python3 >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    echo "[INFO] python3 not found. Installing python3, pip, and venv via apt-get..."
+    apt-get update
+    apt-get install -y python3 python3-pip python3-venv
+  else
+    echo "[ERROR] python3 is not installed and apt-get is unavailable."
+    exit 1
+  fi
+fi
+
+# Ensure venv module exists (important for minimal Ubuntu images)
+if ! python3 -m venv --help >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    echo "[INFO] python3-venv missing. Installing via apt-get..."
+    apt-get update
+    apt-get install -y python3-venv
+  else
+    echo "[ERROR] python3-venv missing and apt-get is unavailable."
+    exit 1
+  fi
+fi
+
+# ---------- Virtual environment ----------
+echo "[INFO] Creating virtual environment at $VENV_DIR"
+python3 -m venv "$VENV_DIR"
+# shellcheck disable=SC1091
+source "$VENV_DIR/bin/activate"
+
+python -m pip install --upgrade pip setuptools wheel
+
+# ---------- Python dependencies ----------
+echo "[INFO] Installing core dependencies"
+pip install --no-cache-dir numpy scipy matplotlib tqdm networkx
+
+echo "[INFO] Installing CPU PyTorch"
+pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+
+# Install torch_scatter / pyg_lib wheels that match the installed torch version.
+TORCH_WHL_TAG="$(python - <<'PY'
+import torch
+v = torch.__version__.split('+')[0]
+major, minor, patch = v.split('.')[:3]
+print(f"{major}.{minor}.{patch}")
+PY
+)"
+
+PYG_WHL_URL="https://data.pyg.org/whl/torch-${TORCH_WHL_TAG}+cpu.html"
+echo "[INFO] Installing PyG extension wheels from: ${PYG_WHL_URL}"
+pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster -f "$PYG_WHL_URL"
+
+echo "[INFO] Installing torch_geometric"
+pip install --no-cache-dir torch_geometric
+
+# ---------- Pipeline execution ----------
+cd "$PROJECT_DIR"
+
+# Configurable knobs (can be overridden by environment variables)
+TRAIN_EPOCHS="${TRAIN_EPOCHS:-20}"
+TRAIN_BUDGET="${TRAIN_BUDGET:-5}"
+TRAIN_ALPHA="${TRAIN_ALPHA:-10.0}"
+TRAIN_BETA="${TRAIN_BETA:-1.0}"
+TRAIN_BS="${TRAIN_BS:-16}"
+TRAIN_NSTEP="${TRAIN_NSTEP:-2}"
+RESUME_CKPT="${RESUME_CKPT:-results_newdataset/tripling.ckpt170}"
+START_EPOCH="${START_EPOCH:-170}"
+
+for required in train_graphs_new train_comms_new test_graph_new.txt test_comms_new.txt main.py inference.py baseline.py; do
+  if [[ ! -e "$required" ]]; then
+    echo "[ERROR] Required file/path not found: $PROJECT_DIR/$required"
+    exit 1
+  fi
+done
+
+echo "[INFO] Running training"
+if [[ -f "$RESUME_CKPT" ]]; then
+  echo "[INFO] Using resume checkpoint: $RESUME_CKPT"
+  python main.py \
+    --graph train_graphs_new \
+    --community_path train_comms_new \
+    --budget "$TRAIN_BUDGET" \
+    --alpha "$TRAIN_ALPHA" \
+    --beta "$TRAIN_BETA" \
+    --bs "$TRAIN_BS" \
+    --epoch "$TRAIN_EPOCHS" \
+    --model Tripling \
+    --model_file tripling.ckpt \
+    --n_step "$TRAIN_NSTEP" \
+    --cpu \
+    --resume "$RESUME_CKPT" \
+    --start_epoch "$START_EPOCH"
+else
+  echo "[WARN] Resume checkpoint not found. Training from scratch."
+  python main.py \
+    --graph train_graphs_new \
+    --community_path train_comms_new \
+    --budget "$TRAIN_BUDGET" \
+    --alpha "$TRAIN_ALPHA" \
+    --beta "$TRAIN_BETA" \
+    --bs "$TRAIN_BS" \
+    --epoch "$TRAIN_EPOCHS" \
+    --model Tripling \
+    --model_file tripling.ckpt \
+    --n_step "$TRAIN_NSTEP" \
+    --cpu
+fi
+
+LATEST_MODEL="$(python - <<'PY'
+import glob
+import os
+candidates = [p for p in glob.glob('*/tripling.ckpt') if os.path.isfile(p)]
+if not candidates:
+    raise SystemExit('No trained model file */tripling.ckpt found after training.')
+print(max(candidates, key=os.path.getmtime))
+PY
+)"
+
+echo "[INFO] Latest trained model: $LATEST_MODEL"
+
+echo "[INFO] Running inference"
+python inference.py \
+  --graph test_graph_new.txt \
+  --community_path test_comms_new.txt \
+  --model Tripling \
+  --model_file "$LATEST_MODEL" \
+  --num_communities 1 \
+  --budget "$TRAIN_BUDGET" \
+  --cpu
+
+echo "[INFO] Running degree baseline evaluation"
+python baseline.py \
+  --graph test_graph_new.txt \
+  --community_path test_comms_new.txt \
+  --budget "$TRAIN_BUDGET" \
+  --mode degree \
+  --num_trials 2000
+
+# ---------- Collect artifacts ----------
+MODEL_RUN_DIR="$(dirname "$LATEST_MODEL")"
+TARGET_RUN_DIR="$OUT_DIR/$RUN_TS"
+mkdir -p "$TARGET_RUN_DIR"
+
+cp -r "$MODEL_RUN_DIR" "$TARGET_RUN_DIR/model_run"
+
+# Copy common artifacts if present.
+for f in training_diagnostics.png average_metrics.png list_cumul_reward.txt; do
+  if [[ -f "$MODEL_RUN_DIR/$f" ]]; then
+    cp "$MODEL_RUN_DIR/$f" "$TARGET_RUN_DIR/"
+  fi
+done
+
+cp "$LOG_FILE" "$TARGET_RUN_DIR/pipeline.log"
+
+cat > "$TARGET_RUN_DIR/README_ARTIFACTS.txt" <<TXT
+Run timestamp: $RUN_TS
+Model directory: $MODEL_RUN_DIR
+Primary log: $LOG_FILE
+
+This folder contains:
+- model checkpoints and outputs from training
+- plots generated by runner.py (if produced)
+- full pipeline log (pipeline.log)
+TXT
+
+echo "[INFO] Pipeline completed successfully at $(date -Iseconds)"
+echo "[INFO] Artifacts saved in: $TARGET_RUN_DIR"
