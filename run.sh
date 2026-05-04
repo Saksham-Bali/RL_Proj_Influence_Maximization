@@ -105,106 +105,61 @@ pip install --no-cache-dir numpy scipy matplotlib tqdm
 
 TORCH_VERSION="${TORCH_VERSION:-2.5.1}"
 CUDA_TAG="${CUDA_TAG:-auto}"
+DETECTED_CUDA_VERSION=""
+GPU_HINT=0
 
-install_torch_stack() {
-  local target_tag="$1"
-  local torch_index_url
-  local pyg_url
-  local torch_base
-  local pyg_tag
+if [[ "$CUDA_TAG" == "auto" ]]; then
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    GPU_HINT=1
+    DETECTED_CUDA_VERSION="$(nvidia-smi | sed -n 's/.*CUDA Version: \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -n1 || true)"
+    if [[ -n "$DETECTED_CUDA_VERSION" ]]; then
+      cuda_major="${DETECTED_CUDA_VERSION%%.*}"
+      cuda_minor="${DETECTED_CUDA_VERSION#*.}"
 
-  if [[ "$target_tag" == "cpu" ]]; then
-    torch_index_url="https://download.pytorch.org/whl/cpu"
-  else
-    torch_index_url="https://download.pytorch.org/whl/${target_tag}"
-  fi
-
-  echo "[INFO] Trying torch==${TORCH_VERSION} (${target_tag})"
-  if ! pip install --no-cache-dir --force-reinstall \
-    "torch==${TORCH_VERSION}" \
-    --index-url "$torch_index_url"; then
-    echo "[WARN] Torch install failed for ${target_tag}."
-    return 1
-  fi
-
-  if ! python - <<'PY' >/dev/null 2>&1
-import torch
-_ = torch.__version__
-PY
-  then
-    echo "[WARN] Torch import failed after install (${target_tag})."
-    return 1
-  fi
-
-  torch_base="$(python - <<'PY'
-import torch
-base = torch.__version__.split('+')[0]
-cuda = torch.version.cuda
-if cuda:
-    major, minor = cuda.split('.')[:2]
-    print(base)
-    print(f"cu{major}{minor}")
-else:
-    print(base)
-    print("cpu")
-PY
-)"
-  torch_base="$(echo "$torch_base" | sed -n '1p')"
-  pyg_tag="$(python - <<'PY'
-import torch
-cuda = torch.version.cuda
-if cuda:
-    major, minor = cuda.split('.')[:2]
-    print(f"cu{major}{minor}")
-else:
-    print("cpu")
-PY
-)"
-  pyg_url="https://data.pyg.org/whl/torch-${torch_base}+${pyg_tag}.html"
-
-  echo "[INFO] Installing torch_scatter from: ${pyg_url}"
-  if ! pip install --no-cache-dir --force-reinstall torch_scatter -f "$pyg_url"; then
-    echo "[WARN] torch_scatter install failed for ${target_tag}."
-    return 1
-  fi
-
-  return 0
-}
-
-GPU_VISIBLE=0
-if command -v nvidia-smi >/dev/null 2>&1 || [[ -e /dev/nvidia0 || -e /dev/nvidiactl || -n "${NVIDIA_VISIBLE_DEVICES:-}" ]]; then
-  GPU_VISIBLE=1
-fi
-
-INSTALLED=0
-if [[ "$CUDA_TAG" != "auto" ]]; then
-  if install_torch_stack "$CUDA_TAG"; then
-    INSTALLED=1
-  else
-    echo "[WARN] Requested CUDA_TAG=${CUDA_TAG} failed. Falling back to CPU."
-    install_torch_stack cpu
-    INSTALLED=1
-  fi
-else
-  if [[ "$GPU_VISIBLE" -eq 1 ]]; then
-    for tag in cu124 cu121 cu118; do
-      if install_torch_stack "$tag"; then
-        INSTALLED=1
-        break
+      if (( cuda_major > 12 || (cuda_major == 12 && cuda_minor >= 4) )); then
+        CUDA_TAG="cu124"
+      elif (( cuda_major == 12 && cuda_minor >= 1 )); then
+        CUDA_TAG="cu121"
+      elif (( cuda_major == 11 && cuda_minor >= 8 )) || (( cuda_major > 11 )); then
+        CUDA_TAG="cu118"
+      else
+        CUDA_TAG="cpu"
       fi
-    done
-  fi
-  if [[ "$INSTALLED" -eq 0 ]]; then
-    echo "[INFO] Using CPU fallback torch build."
-    install_torch_stack cpu
-    INSTALLED=1
+    else
+      CUDA_TAG="cu118"
+    fi
+  elif [[ -e /dev/nvidia0 || -e /dev/nvidiactl || -n "${NVIDIA_VISIBLE_DEVICES:-}" ]]; then
+    # GPU appears to be passed through, but nvidia-smi may be unavailable.
+    # Use the most compatible CUDA wheel by default.
+    GPU_HINT=1
+    CUDA_TAG="cu118"
+  else
+    CUDA_TAG="cpu"
   fi
 fi
+
+if [[ "$CUDA_TAG" == "cpu" ]]; then
+  echo "[INFO] Installing CPU PyTorch (${TORCH_VERSION})"
+  TORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
+else
+  echo "[INFO] Installing CUDA-enabled PyTorch (${TORCH_VERSION}, ${CUDA_TAG})"
+  if [[ -n "$DETECTED_CUDA_VERSION" ]]; then
+    echo "[INFO] nvidia-smi detected CUDA capability: ${DETECTED_CUDA_VERSION}"
+  fi
+  TORCH_INDEX_URL="https://download.pytorch.org/whl/${CUDA_TAG}"
+fi
+
+pip install --no-cache-dir "torch==${TORCH_VERSION}" --index-url "$TORCH_INDEX_URL"
+
+PYG_WHL_URL="https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
+echo "[INFO] Installing torch_scatter from: ${PYG_WHL_URL}"
+pip install --no-cache-dir torch_scatter -f "$PYG_WHL_URL"
 
 echo "[INFO] Installing torch_geometric"
-pip install --no-cache-dir --force-reinstall torch_geometric
+pip install --no-cache-dir torch_geometric
 
 echo "[INFO] Torch/CUDA runtime check"
+CUDA_RUNTIME_OK=0
 python - <<'PY'
 import torch
 print(f"Torch version: {torch.__version__}")
@@ -213,6 +168,19 @@ print(f"Torch CUDA runtime: {torch.version.cuda}")
 if torch.cuda.is_available():
     print(f"CUDA device: {torch.cuda.get_device_name(0)}")
 PY
+
+if python - <<'PY'
+import torch, sys
+sys.exit(0 if torch.cuda.is_available() else 1)
+PY
+then
+  CUDA_RUNTIME_OK=1
+fi
+
+if [[ "$CUDA_TAG" != "cpu" && "$GPU_HINT" -eq 1 && "$CUDA_RUNTIME_OK" -eq 0 ]]; then
+  echo "[WARN] CUDA wheel installed but GPU runtime is not usable in this container."
+  echo "[WARN] If you expected GPU, run the container with NVIDIA runtime (e.g. --gpus all)."
+fi
 
 # ---------- Pipeline execution ----------
 cd "$PROJECT_DIR"
