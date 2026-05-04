@@ -26,7 +26,7 @@ def main():
 
     # Load Graph
     print(f"Loading test graph from {args.graph}...")
-    graph = graph_utils.read_graph(args.graph, ind=0, directed=True, community_path=args.community_path)
+    graph = graph_utils.read_graph(args.graph, ind=0, directed=False, community_path=args.community_path)
     
     # The model architecture now uses a fixed hash dimension (COMM_HASH_DIM)
     # so num_communities only needs to be >0 to enable community feature paths.

@@ -13,14 +13,18 @@ def main():
     parser.add_argument('--community_path', type=str, required=True,
                         help='Path to community file')
     parser.add_argument('--budget', type=int, default=5,
-                        help='Number of seed nodes (used only for random mode)')
+                        help='Number of seed nodes')
+    parser.add_argument('--mode', type=str, default='random',
+                        choices=['random', 'manual', 'degree'],
+                        help='Seed selection mode: random | manual | degree')
     parser.add_argument('--seeds', type=int, nargs='+', default=None,
-                        help='Manually specify seed nodes e.g. --seeds 3 17 42 8 99')
+                        help='Manual seed nodes (only used when --mode manual) '
+                             'e.g. --seeds 3 17 42 8 99')
     parser.add_argument('--num_trials', type=int, default=10000,
                         help='Number of Monte Carlo trials (default 10000)')
     parser.add_argument('--runs', type=int, default=1,
                         help='How many independent random seed sets to evaluate '
-                             '(ignored if --seeds is provided)')
+                             '(only used when --mode random)')
 
     args = parser.parse_args()
 
@@ -29,34 +33,55 @@ def main():
     graph = graph_utils.read_graph(
         args.graph, ind=0, directed=False, community_path=args.community_path)
 
-    print(f"  Nodes: {graph.num_nodes}")
-    print(f"  Edges: {graph.num_edges}")
+    print(f"  Nodes:       {graph.num_nodes}")
+    print(f"  Edges:       {graph.num_edges}")
     print(f"  Communities: {graph.num_communities}")
 
     # ---- Build seed sets to evaluate ----
-    if args.seeds is not None:
-        # Manual mode — validate the provided nodes
+    if args.mode == 'manual':
+        if args.seeds is None:
+            print("\nERROR: --mode manual requires --seeds to be specified.")
+            return
         invalid = [s for s in args.seeds if s < 0 or s >= graph.num_nodes]
         if invalid:
             print(f"\nERROR: These node IDs are out of range "
                   f"(valid range 0 to {graph.num_nodes - 1}): {invalid}")
             return
         seed_sets = [args.seeds]
-        print(f"\nMode: MANUAL — evaluating provided seeds: {args.seeds}")
-    else:
-        # Random mode — sample `runs` independent seed sets
+        print(f"\nMode: MANUAL")
+        print(f"  Seeds: {args.seeds}")
+
+    elif args.mode == 'degree':
+        # Pick the top-budget nodes by out-degree.
+        # Out-degree = number of children = how many nodes this node
+        # can directly try to activate. This is the simplest non-trivial
+        # heuristic for influence maximisation and a strong baseline —
+        # if your trained model does not beat this, it has not learned
+        # anything beyond basic graph topology.
+        degree_ranked = sorted(
+            graph.nodes,
+            key=lambda n: len(graph.children.get(n, [])),
+            reverse=True
+        )
+        seeds = degree_ranked[:args.budget]
+        seed_sets = [seeds]
+        print(f"\nMode: DEGREE (top-{args.budget} by out-degree)")
+        # Print each seed with its degree so you can see what was picked
+        for s in seeds:
+            print(f"  Node {s:5d} — out-degree {len(graph.children.get(s, []))}")
+
+    else:  # random
         seed_sets = [
             random.sample(range(graph.num_nodes), args.budget)
             for _ in range(args.runs)
         ]
-        print(f"\nMode: RANDOM — evaluating {args.runs} random seed set(s) "
-              f"of size {args.budget}")
+        print(f"\nMode: RANDOM — {args.runs} run(s) of size {args.budget}")
 
     # ---- Evaluate each seed set ----
-    print(f"Running {args.num_trials} Monte Carlo trials per seed set...\n")
+    print(f"\nRunning {args.num_trials} Monte Carlo trials per seed set...\n")
 
-    all_influences   = []
-    all_communities  = []
+    all_influences  = []
+    all_communities = []
 
     for i, seeds in enumerate(seed_sets):
         start = time.time()
