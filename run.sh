@@ -92,8 +92,6 @@ TRAIN_ALPHA="${TRAIN_ALPHA:-10.0}"
 TRAIN_BETA="${TRAIN_BETA:-1.0}"
 TRAIN_BS="${TRAIN_BS:-16}"
 TRAIN_NSTEP="${TRAIN_NSTEP:-2}"
-RESUME_CKPT="${RESUME_CKPT:-results_newdataset/tripling.ckpt170}"
-START_EPOCH="${START_EPOCH:-170}"
 
 for required in train_graphs_new train_comms_new test_graph_new.txt test_comms_new.txt main.py inference.py baseline.py; do
   if [[ ! -e "$required" ]]; then
@@ -103,37 +101,18 @@ for required in train_graphs_new train_comms_new test_graph_new.txt test_comms_n
 done
 
 echo "[INFO] Running training"
-if [[ -f "$RESUME_CKPT" ]]; then
-  echo "[INFO] Using resume checkpoint: $RESUME_CKPT"
-  python main.py \
-    --graph train_graphs_new \
-    --community_path train_comms_new \
-    --budget "$TRAIN_BUDGET" \
-    --alpha "$TRAIN_ALPHA" \
-    --beta "$TRAIN_BETA" \
-    --bs "$TRAIN_BS" \
-    --epoch "$TRAIN_EPOCHS" \
-    --model Tripling \
-    --model_file tripling.ckpt \
-    --n_step "$TRAIN_NSTEP" \
-    --cpu \
-    --resume "$RESUME_CKPT" \
-    --start_epoch "$START_EPOCH"
-else
-  echo "[WARN] Resume checkpoint not found. Training from scratch."
-  python main.py \
-    --graph train_graphs_new \
-    --community_path train_comms_new \
-    --budget "$TRAIN_BUDGET" \
-    --alpha "$TRAIN_ALPHA" \
-    --beta "$TRAIN_BETA" \
-    --bs "$TRAIN_BS" \
-    --epoch "$TRAIN_EPOCHS" \
-    --model Tripling \
-    --model_file tripling.ckpt \
-    --n_step "$TRAIN_NSTEP" \
-    --cpu
-fi
+python main.py \
+  --graph train_graphs_new \
+  --community_path train_comms_new \
+  --budget "$TRAIN_BUDGET" \
+  --alpha "$TRAIN_ALPHA" \
+  --beta "$TRAIN_BETA" \
+  --bs "$TRAIN_BS" \
+  --epoch "$TRAIN_EPOCHS" \
+  --model Tripling \
+  --model_file tripling.ckpt \
+  --n_step "$TRAIN_NSTEP" \
+  --cpu
 
 LATEST_MODEL="$(python - <<'PY'
 import glob
