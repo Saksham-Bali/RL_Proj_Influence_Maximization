@@ -379,7 +379,7 @@ This generates 70 training subgraphs using concurrent multi-anchor BFS with Jacc
 ## Key Design Decisions
 
 ### Fixed 5-dim Community Features
-The community feature vector has exactly 5 dimensions regardless of graph scale. This means the projection weights `Linear(5, 50)` learned on 12-community training graphs apply without modification to the 3,500-community test graph. Dimension mismatch — the standard failure mode for cross-graph generalisation — is entirely avoided.
+The community feature vector has exactly 5 dimensions regardless of graph scale. This means the projection weights `Linear(5, 50)` learned on 12-community training graphs apply without modification to the 3500-community test graph. Dimension mismatch — the standard failure mode for cross-graph generalisation — is entirely avoided.
 
 ### Normalised Composite Reward
 Both terms in `r = α × (Δinf / N) + β × (Δcomm / C)` are normalised to [0, 1]. The reward scale is consistent whether the graph has 100 nodes or 800,000, enabling zero-shot transfer.
