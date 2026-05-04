@@ -1,4 +1,4 @@
-# 🌐 Community-Aware Influence Maximization via Reinforcement Learning
+# Community-Aware Influence Maximization via Reinforcement Learning
 
 > **Selecting seed nodes that don't just spread far — they spread wide.**
 
@@ -30,7 +30,6 @@ A deep reinforcement learning framework for Influence Maximization on large-scal
 **The gap we fill:** Classical algorithms (CELF, IMM) maximise raw spread but are *community-blind* — cascades get trapped in echo chambers. We add a **community-diversity objective** so the agent learns to reach structurally distinct parts of the network.
 
 **Our approach:**
-
 | Component | Description |
 |---|---|
 | **Model** | ToupleGDD — three coupled GNNs (State / Source / Target) |
@@ -287,7 +286,7 @@ python main.py \
 
 ---
 
-## 🔮 Inference
+## Inference
 
 ```bash
 cd touplegdd
