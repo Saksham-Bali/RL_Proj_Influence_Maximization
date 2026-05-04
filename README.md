@@ -2,24 +2,26 @@
 
 > **Selecting seed nodes that don't just spread far — they spread wide.**
 
-A deep reinforcement learning framework for Influence Maximization on large-scale social networks, extending [ToupleGDD](https://arxiv.org/abs/2108.04430) with community-diversity objectives. Trained on 100-node subgraphs, the policy generalises zero-shot to graphs with **800,000+ nodes** in milliseconds.
+A deep reinforcement learning framework for Influence Maximization on large-scale social networks, extending [ToupleGDD](https://arxiv.org/abs/2108.04430) with community-diversity objectives. 
 
 ---
 
 ## Table of Contents
 
-- [Overview](#-overview)
-- [Architecture](#-architecture)
-- [Key Results](#-key-results)
-- [Repository Structure](#-repository-structure)
-- [Quickstart](#-quickstart)
-- [Manual Setup](#-manual-setup)
-- [Training](#-training)
-- [Inference](#-inference)
-- [Baselines](#-running-baselines)
-- [Experiments & Ablations](#-experiments--ablations)
-- [Design Decisions](#-key-design-decisions)
-- [Citation](#-citation)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Key Results](#key-results)
+- [Repository Structure](#repository-structure)
+- [Quickstart](#quickstart)
+- [Manual Setup](#manual-setup)
+- [Training](#training)
+- [Inference](#inference)
+- [Running Baselines](#running-baselines)
+- [Experiments](#experiments)
+- [Regenerating Training Data (Optional)](#regenerating-training-data-optional)
+- [Key Design Decisions](#key-design-decisions)
+- [Dependencies](#dependencies)
+- [Authors](#authors)
 
 ---
 
@@ -40,7 +42,7 @@ A deep reinforcement learning framework for Influence Maximization on large-scal
 
 ---
 
-##  Architecture
+## Architecture
 
 ```
 Raw LiveJournal Graph
@@ -342,7 +344,7 @@ python run_imm_celf.py
 
 ---
 
-## Experiments & Ablations
+## Experiments
 
 Pre-run experiment results are saved in the following directories:
 
@@ -353,7 +355,7 @@ Pre-run experiment results are saved in the following directories:
 | `a10b1/` | α=10, β=1 (influence-heavy) | ~240 |
 | `a1b10/` | α=1, β=10 (community-heavy) | ~110 |
 
-To reproduce ablations:
+To reproduce experiments:
 
 ```bash
 # Influence-dominant
