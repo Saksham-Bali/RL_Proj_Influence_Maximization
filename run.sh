@@ -86,10 +86,10 @@ pip install --no-cache-dir torch_geometric
 cd "$PROJECT_DIR"
 
 # Configurable knobs (can be overridden by environment variables)
-TRAIN_EPOCHS="${TRAIN_EPOCHS:-20}"
+TRAIN_EPOCHS="${TRAIN_EPOCHS:-20000}"
 TRAIN_BUDGET="${TRAIN_BUDGET:-5}"
-TRAIN_ALPHA="${TRAIN_ALPHA:-10.0}"
-TRAIN_BETA="${TRAIN_BETA:-1.0}"
+TRAIN_ALPHA="${TRAIN_ALPHA:-1.0}"
+TRAIN_BETA="${TRAIN_BETA:-2.0}"
 TRAIN_BS="${TRAIN_BS:-16}"
 TRAIN_NSTEP="${TRAIN_NSTEP:-2}"
 
@@ -111,8 +111,7 @@ python main.py \
   --epoch "$TRAIN_EPOCHS" \
   --model Tripling \
   --model_file tripling.ckpt \
-  --n_step "$TRAIN_NSTEP" \
-  --cpu
+  --n_step "$TRAIN_NSTEP"
 
 LATEST_MODEL="$(python - <<'PY'
 import glob
