@@ -101,18 +101,57 @@ python -m pip install --upgrade pip setuptools wheel
 
 # ---------- Python dependencies ----------
 echo "[INFO] Installing core dependencies"
-pip install --no-cache-dir numpy scipy matplotlib tqdm networkx
+pip install --no-cache-dir numpy scipy matplotlib tqdm
 
 TORCH_VERSION="${TORCH_VERSION:-2.5.1}"
-CUDA_TAG="${CUDA_TAG:-cu121}"
+CUDA_TAG="${CUDA_TAG:-auto}"
+DETECTED_CUDA_VERSION=""
+
+if [[ "$CUDA_TAG" == "auto" ]]; then
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    DETECTED_CUDA_VERSION="$(nvidia-smi | sed -n 's/.*CUDA Version: \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -n1 || true)"
+    if [[ -n "$DETECTED_CUDA_VERSION" ]]; then
+      cuda_major="${DETECTED_CUDA_VERSION%%.*}"
+      cuda_minor="${DETECTED_CUDA_VERSION#*.}"
+
+      if (( cuda_major > 12 || (cuda_major == 12 && cuda_minor >= 4) )); then
+        CUDA_TAG="cu124"
+      elif (( cuda_major == 12 && cuda_minor >= 1 )); then
+        CUDA_TAG="cu121"
+      elif (( cuda_major == 11 && cuda_minor >= 8 )) || (( cuda_major > 11 )); then
+        CUDA_TAG="cu118"
+      else
+        CUDA_TAG="cpu"
+      fi
+    else
+      CUDA_TAG="cpu"
+    fi
+  else
+    CUDA_TAG="cpu"
+  fi
+fi
+
+if [[ "$CUDA_TAG" == "cpu" ]]; then
+  echo "[INFO] Installing CPU PyTorch (${TORCH_VERSION})"
+  TORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
+else
+  echo "[INFO] Installing CUDA-enabled PyTorch (${TORCH_VERSION}, ${CUDA_TAG})"
+  if [[ -n "$DETECTED_CUDA_VERSION" ]]; then
+    echo "[INFO] nvidia-smi detected CUDA capability: ${DETECTED_CUDA_VERSION}"
+  fi
+  TORCH_INDEX_URL="https://download.pytorch.org/whl/${CUDA_TAG}"
+fi
+
+pip install --no-cache-dir "torch==${TORCH_VERSION}" --index-url "$TORCH_INDEX_URL"
+
 PYG_WHL_URL="https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
-
-echo "[INFO] Installing CUDA-enabled PyTorch (${TORCH_VERSION}, ${CUDA_TAG})"
-pip install --no-cache-dir "torch==${TORCH_VERSION}" \
-  --index-url "https://download.pytorch.org/whl/${CUDA_TAG}"
-
-echo "[INFO] Installing PyG extension wheels from: ${PYG_WHL_URL}"
-pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster -f "$PYG_WHL_URL"
+if [[ "$CUDA_TAG" != "cpu" ]]; then
+  echo "[INFO] Installing torch_scatter wheel from: ${PYG_WHL_URL}"
+  pip install --no-cache-dir torch_scatter -f "$PYG_WHL_URL"
+else
+  echo "[INFO] Installing CPU torch_scatter wheel from: ${PYG_WHL_URL}"
+  pip install --no-cache-dir torch_scatter -f "$PYG_WHL_URL"
+fi
 
 echo "[INFO] Installing torch_geometric"
 pip install --no-cache-dir torch_geometric
@@ -122,6 +161,7 @@ python - <<'PY'
 import torch
 print(f"Torch version: {torch.__version__}")
 print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"Torch CUDA runtime: {torch.version.cuda}")
 if torch.cuda.is_available():
     print(f"CUDA device: {torch.cuda.get_device_name(0)}")
 PY
