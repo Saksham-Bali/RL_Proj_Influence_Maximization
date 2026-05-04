@@ -207,6 +207,9 @@ done
 
 if [[ "$INFERENCE_ONLY" -eq 0 ]]; then
   echo "[INFO] Running training"
+  TRAIN_MARKER_FILE=".train_started_${RUN_TS}.marker"
+  touch "$TRAIN_MARKER_FILE"
+
   python - <<'PY'
 import torch
 if torch.cuda.is_available():
@@ -224,18 +227,26 @@ PY
     --bs "$TRAIN_BS" \
     --epoch "$TRAIN_EPOCHS" \
     --model Tripling \
-    --model_file tripling.ckpt \
+    --model_file pipeline_trained.ckpt \
     --n_step "$TRAIN_NSTEP"
 
-  LATEST_MODEL="$(python - <<'PY'
+  LATEST_MODEL="$(TRAIN_MARKER_FILE="$TRAIN_MARKER_FILE" python - <<'PY'
 import glob
 import os
-candidates = [p for p in glob.glob('*/tripling.ckpt') if os.path.isfile(p)]
+marker = os.environ['TRAIN_MARKER_FILE']
+marker_mtime = os.path.getmtime(marker)
+candidates = [
+    p for p in glob.glob('*/pipeline_trained.ckpt')
+    if os.path.isfile(p) and os.path.getmtime(p) >= marker_mtime
+]
 if not candidates:
-    raise SystemExit('No trained model file */tripling.ckpt found after training.')
+    raise SystemExit(
+        'No newly trained model file */pipeline_trained.ckpt found for this run.'
+    )
 print(max(candidates, key=os.path.getmtime))
 PY
 )"
+  rm -f "$TRAIN_MARKER_FILE"
 else
   echo "[INFO] Inference-only mode enabled. Training step skipped."
   if [[ -n "$MODEL_FILE_OVERRIDE" ]]; then
