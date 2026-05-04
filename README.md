@@ -2,8 +2,20 @@
 
 > **Selecting seed nodes that don't just spread far — they spread wide.**
 
-A deep reinforcement learning framework for Influence Maximization on large-scale social networks, extending [ToupleGDD](https://arxiv.org/abs/2108.04430) with community-diversity objectives. 
+A deep reinforcement learning framework for Influence Maximization on large-scale social networks, built directly on the **ToupleGDD** architecture proposed by Chen et al. and extended with our community-diversity objective.
 
+Our implementation uses ToupleGDD as the base model:
+three coupled GNN streams (State / Source / Target), Personalized DeepWalk pretraining, and Double DQN-based reinforcement learning for scalable seed-node selection.
+
+We further improve the original formulation by introducing a **community-aware reward function** that jointly optimizes:
+1. Influence spread
+2. Structural diversity across communities
+
+### Base Paper Citation
+
+Chen, T., Yan, S., Guo, J., & Wu, W. (2023).  
+**ToupleGDD: A fine-designed solution of influence maximization by deep reinforcement learning.**  
+*IEEE Transactions on Computational Social Systems, 11(2), 2210–2221.*
 ---
 
 ## Table of Contents
@@ -92,6 +104,14 @@ The fixed 5-dim representation is the key to zero-shot generalisation: training 
 
 ## Key Results
 
+## Model Demonstration
+
+Below is a short visual demonstration of the training/inference pipeline and policy behavior:
+
+<p align="center">
+  <img src="assets/demo.gif" width="850"/>
+</p>
+
 ### RL Agent vs. Classical Baselines
 
 | Method | Influence Spread | Communities Reached | Inference Time |
@@ -115,7 +135,32 @@ Training and validation plots are saved automatically every 10 epochs:
 | `training_diagnostics.png` | 4-panel: TD loss, validation reward, influence spread, communities reached |
 | `average_metrics.png` | 3-panel averaged metrics across all training graphs |
 
+## Average Metrics Across All Training Graphs
+
+<p align="center">
+  <img src="assets/average_metrics.png" width="1000"/>
+</p>
+
+This plot shows stable convergence of:
+- composite reward
+- influence spread
+- community diversity
+
+across all training graphs.
+
+## Training Diagnostics Visualization
+
+<p align="center">
+  <img src="assets/training_diagnostics.png" width="1000"/>
+</p>
+
+These diagnostics confirm:
+- stable TD loss
+- rapid convergence
+- consistent validation reward
+- successful zero-shot generalization
 ---
+
 
 ## Repository Structure
 
@@ -161,7 +206,7 @@ chmod +x run.sh
 
 This will:
 1. Create a Python virtual environment at `.venv/`
-2. Install all dependencies (PyTorch 2.5.1 CPU, PyG, torch_scatter)
+2. Install all dependencies
 3. Run training via `main.py`
 4. Run inference via `inference.py`
 5. Collect checkpoints, plots, and logs into a timestamped output directory
