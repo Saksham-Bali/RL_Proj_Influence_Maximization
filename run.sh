@@ -93,7 +93,7 @@ TRAIN_BETA="${TRAIN_BETA:-2.0}"
 TRAIN_BS="${TRAIN_BS:-16}"
 TRAIN_NSTEP="${TRAIN_NSTEP:-2}"
 
-for required in train_graphs_new train_comms_new test_graph_new.txt test_comms_new.txt main.py inference.py baseline.py; do
+for required in train_graphs_new train_comms_new test_graph_new.txt test_comms_new.txt main.py inference.py; do
   if [[ ! -e "$required" ]]; then
     echo "[ERROR] Required file/path not found: $PROJECT_DIR/$required"
     exit 1
@@ -132,16 +132,10 @@ python inference.py \
   --model Tripling \
   --model_file "$LATEST_MODEL" \
   --num_communities 1 \
-  --budget "$TRAIN_BUDGET" \
-  --cpu
+  --budget "$TRAIN_BUDGET"
 
-echo "[INFO] Running degree baseline evaluation"
-python baseline.py \
-  --graph test_graph_new.txt \
-  --community_path test_comms_new.txt \
-  --budget "$TRAIN_BUDGET" \
-  --mode degree \
-  --num_trials 2000
+# Baseline evaluation removed
+
 
 # ---------- Collect artifacts ----------
 MODEL_RUN_DIR="$(dirname "$LATEST_MODEL")"
