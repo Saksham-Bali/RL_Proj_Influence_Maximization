@@ -52,7 +52,7 @@ Raw LiveJournal Graph
         │                                             │
         ▼                                             ▼
 70 Training Subgraphs                     1 Large Test Graph
-(~100 nodes, 4–8 communities)           (~800K nodes, 3191 communities)
+(100 nodes, on avg. 5 communities)           (~350K nodes, ~3500 communities)
         │                                             │
         ▼                                             │
    main.py (Training)                                 │
@@ -87,7 +87,7 @@ rl_agents  runner.py ──► Checkpoints + Plots          │
 | 3 | `max(comm_size) / N` | Relative size of the node's largest community |
 | 4 | **Dynamic:** `log1p(uncovered_comms)` | Communities not yet covered by current seed set |
 
-The fixed 5-dim representation is the key to zero-shot generalisation: training graphs (~12 communities) and the test graph (3,191 communities) both produce identical `(N, 5)` tensors.
+The fixed 5-dim representation is the key to zero-shot generalisation: training graphs (on avgerage 5 communities) and the test graph (~3500 communities) both produce identical `(N, 5)` tensors.
 
 ---
 
@@ -103,14 +103,14 @@ The fixed 5-dim representation is the key to zero-shot generalisation: training 
 | IMM | 81.2 ± 17.8 nodes | low (echo-chamber) | slow |
 | **Ours (α=1, β=10)** | 41 nodes avg. | **4.3 unique communities** | **milliseconds** |
 
-### Ablation: Reward Weight Trade-off
+### Experiments: Reward Weight Trade-off
 
 | Config | Composite Reward | Behavior |
 |--------|-----------------|---------|
 | α=10, β=1 (influence-heavy) | — | Mimics CELF/IMM, hub-seeking |
 | **α=1, β=10 (community-heavy)** | **~9.4 avg** | Selects boundary-bridging nodes |
 
-- **Zero-shot inference:** Policy trained on 100-node subgraphs runs in **fractions of a second** on an 800K-node graph with no fine-tuning.
+- **Zero-shot inference:** Policy trained on 100-node subgraphs.
 - **Convergence:** Stable within 50–100 epochs; TD loss in range 10⁻⁵ to 10⁻³.
 
 ### Training Diagnostics
@@ -147,8 +147,8 @@ RL_Proj_Influence_Maximization/
     │   └── graph_utils.py          # Graph class, I/O, Monte Carlo & RR estimation
     ├── train_graphs_new/           # 70 training subgraphs (edge lists)
     ├── train_comms_new/            # 70 matching community files
-    ├── test_graph_new.txt          # Large test graph (~800K nodes)
-    ├── test_comms_new.txt          # 3191 communities for test graph
+    ├── test_graph_new.txt          # Large test graph (~350K nodes)
+    ├── test_comms_new.txt          # 3500 communities for test graph
     └── results_*/                  # Saved checkpoints & plots per experiment
 ```
 
@@ -172,13 +172,6 @@ This will:
 3. Run training via `main.py`
 4. Run inference via `inference.py`
 5. Collect checkpoints, plots, and logs into a timestamped output directory
-
-**Override defaults:**
-```bash
-TRAIN_EPOCHS=500 TRAIN_ALPHA=1.0 TRAIN_BETA=2.0 ./run.sh
-```
-
----
 
 ## Manual Setup
 
@@ -261,13 +254,13 @@ python main.py \
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--budget` | `6` | Number of seed nodes to select |
-| `--epoch` | `2000` | Training epochs |
+| `--budget` | `5` | Number of seed nodes to select |
+| `--epoch` | `20000` | Training epochs |
 | `--lr` | `1e-3` | Learning rate |
-| `--bs` | `8` | Replay buffer minibatch size |
+| `--bs` | `16` | Replay buffer minibatch size |
 | `--n_step` | `2` | N-step return horizon |
 | `--alpha` | `1.0` | Reward weight for influence gain |
-| `--beta` | `10.0` | Reward weight for community diversity |
+| `--beta` | `2.0` | Reward weight for community diversity |
 | `--T` | `3` | GNN message-passing iterations |
 | `--embed_dim` | `50` | Embedding dimension |
 | `--memory_size` | `50000` | Replay buffer capacity |
@@ -386,7 +379,7 @@ This generates 70 training subgraphs using concurrent multi-anchor BFS with Jacc
 ## Key Design Decisions
 
 ### Fixed 5-dim Community Features
-The community feature vector has exactly 5 dimensions regardless of graph scale. This means the projection weights `Linear(5, 50)` learned on 12-community training graphs apply without modification to the 3,191-community test graph. Dimension mismatch — the standard failure mode for cross-graph generalisation — is entirely avoided.
+The community feature vector has exactly 5 dimensions regardless of graph scale. This means the projection weights `Linear(5, 50)` learned on 12-community training graphs apply without modification to the 3,500-community test graph. Dimension mismatch — the standard failure mode for cross-graph generalisation — is entirely avoided.
 
 ### Normalised Composite Reward
 Both terms in `r = α × (Δinf / N) + β × (Δcomm / C)` are normalised to [0, 1]. The reward scale is consistent whether the graph has 100 nodes or 800,000, enabling zero-shot transfer.
