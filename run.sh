@@ -14,6 +14,46 @@ mkdir -p "$LOG_DIR" "$OUT_DIR"
 RUN_TS="$(date +"%Y%m%d_%H%M%S")"
 LOG_FILE="$LOG_DIR/run_${RUN_TS}.log"
 
+INFERENCE_ONLY=0
+MODEL_FILE_OVERRIDE=""
+
+print_usage() {
+  cat <<'USAGE'
+Usage: bash run.sh [--inference-only] [--model-file <relative_model_path>]
+
+Options:
+  --inference-only         Skip training and run inference only.
+  --model-file <path>      Relative path (from touplegdd/) to checkpoint for inference.
+  -h, --help               Show this help message.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --inference-only)
+      INFERENCE_ONLY=1
+      shift
+      ;;
+    --model-file)
+      if [[ $# -lt 2 ]]; then
+        echo "[ERROR] --model-file requires a path argument."
+        exit 1
+      fi
+      MODEL_FILE_OVERRIDE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "[ERROR] Unknown argument: $1"
+      print_usage
+      exit 1
+      ;;
+  esac
+done
+
 # Mirror all stdout/stderr to a timestamped logfile.
 exec > >(tee -a "$LOG_FILE") 2>&1
 
@@ -63,24 +103,28 @@ python -m pip install --upgrade pip setuptools wheel
 echo "[INFO] Installing core dependencies"
 pip install --no-cache-dir numpy scipy matplotlib tqdm networkx
 
-echo "[INFO] Installing CPU PyTorch"
-pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+TORCH_VERSION="${TORCH_VERSION:-2.5.1}"
+CUDA_TAG="${CUDA_TAG:-cu121}"
+PYG_WHL_URL="https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
 
-# Install torch_scatter / pyg_lib wheels that match the installed torch version.
-TORCH_WHL_TAG="$(python - <<'PY'
-import torch
-v = torch.__version__.split('+')[0]
-major, minor, patch = v.split('.')[:3]
-print(f"{major}.{minor}.{patch}")
-PY
-)"
+echo "[INFO] Installing CUDA-enabled PyTorch (${TORCH_VERSION}, ${CUDA_TAG})"
+pip install --no-cache-dir "torch==${TORCH_VERSION}" \
+  --index-url "https://download.pytorch.org/whl/${CUDA_TAG}"
 
-PYG_WHL_URL="https://data.pyg.org/whl/torch-${TORCH_WHL_TAG}+cpu.html"
 echo "[INFO] Installing PyG extension wheels from: ${PYG_WHL_URL}"
 pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster -f "$PYG_WHL_URL"
 
 echo "[INFO] Installing torch_geometric"
 pip install --no-cache-dir torch_geometric
+
+echo "[INFO] Torch/CUDA runtime check"
+python - <<'PY'
+import torch
+print(f"Torch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+PY
 
 # ---------- Pipeline execution ----------
 cd "$PROJECT_DIR"
@@ -93,27 +137,41 @@ TRAIN_BETA="${TRAIN_BETA:-2.0}"
 TRAIN_BS="${TRAIN_BS:-16}"
 TRAIN_NSTEP="${TRAIN_NSTEP:-2}"
 
-for required in train_graphs_new train_comms_new test_graph_new.txt test_comms_new.txt main.py inference.py; do
+REQUIRED_FILES=(test_graph_new.txt test_comms_new.txt main.py inference.py)
+if [[ "$INFERENCE_ONLY" -eq 0 ]]; then
+  REQUIRED_FILES+=(train_graphs_new train_comms_new)
+fi
+
+for required in "${REQUIRED_FILES[@]}"; do
   if [[ ! -e "$required" ]]; then
     echo "[ERROR] Required file/path not found: $PROJECT_DIR/$required"
     exit 1
   fi
 done
 
-echo "[INFO] Running training"
-python main.py \
-  --graph train_graphs_new \
-  --community_path train_comms_new \
-  --budget "$TRAIN_BUDGET" \
-  --alpha "$TRAIN_ALPHA" \
-  --beta "$TRAIN_BETA" \
-  --bs "$TRAIN_BS" \
-  --epoch "$TRAIN_EPOCHS" \
-  --model Tripling \
-  --model_file tripling.ckpt \
-  --n_step "$TRAIN_NSTEP"
+if [[ "$INFERENCE_ONLY" -eq 0 ]]; then
+  echo "[INFO] Running training"
+  python - <<'PY'
+import torch
+if torch.cuda.is_available():
+    print(f"[INFO] CUDA detected. Training will run on GPU: {torch.cuda.get_device_name(0)}")
+else:
+    print("[INFO] CUDA not detected. Training will run on CPU.")
+PY
 
-LATEST_MODEL="$(python - <<'PY'
+  python main.py \
+    --graph train_graphs_new \
+    --community_path train_comms_new \
+    --budget "$TRAIN_BUDGET" \
+    --alpha "$TRAIN_ALPHA" \
+    --beta "$TRAIN_BETA" \
+    --bs "$TRAIN_BS" \
+    --epoch "$TRAIN_EPOCHS" \
+    --model Tripling \
+    --model_file tripling.ckpt \
+    --n_step "$TRAIN_NSTEP"
+
+  LATEST_MODEL="$(python - <<'PY'
 import glob
 import os
 candidates = [p for p in glob.glob('*/tripling.ckpt') if os.path.isfile(p)]
@@ -122,8 +180,30 @@ if not candidates:
 print(max(candidates, key=os.path.getmtime))
 PY
 )"
+else
+  echo "[INFO] Inference-only mode enabled. Training step skipped."
+  if [[ -n "$MODEL_FILE_OVERRIDE" ]]; then
+    if [[ ! -f "$MODEL_FILE_OVERRIDE" ]]; then
+      echo "[ERROR] Model file not found: $PROJECT_DIR/$MODEL_FILE_OVERRIDE"
+      exit 1
+    fi
+    LATEST_MODEL="$MODEL_FILE_OVERRIDE"
+  else
+    LATEST_MODEL="$(python - <<'PY'
+import glob
+import os
+candidates = [p for p in glob.glob('**/tripling.ckpt*', recursive=True)
+              if os.path.isfile(p)]
+if not candidates:
+    raise SystemExit(
+        'No checkpoint found. Provide one with --model-file <path>.')
+print(max(candidates, key=os.path.getmtime))
+PY
+)"
+  fi
+fi
 
-echo "[INFO] Latest trained model: $LATEST_MODEL"
+echo "[INFO] Selected model checkpoint: $LATEST_MODEL"
 
 echo "[INFO] Running inference"
 python inference.py \
@@ -142,7 +222,12 @@ MODEL_RUN_DIR="$(dirname "$LATEST_MODEL")"
 TARGET_RUN_DIR="$OUT_DIR/$RUN_TS"
 mkdir -p "$TARGET_RUN_DIR"
 
-cp -r "$MODEL_RUN_DIR" "$TARGET_RUN_DIR/model_run"
+if [[ "$MODEL_RUN_DIR" == "." ]]; then
+  mkdir -p "$TARGET_RUN_DIR/model_run"
+  cp "$LATEST_MODEL" "$TARGET_RUN_DIR/model_run/"
+else
+  cp -r "$MODEL_RUN_DIR" "$TARGET_RUN_DIR/model_run"
+fi
 
 # Copy common artifacts if present.
 for f in training_diagnostics.png average_metrics.png list_cumul_reward.txt; do
