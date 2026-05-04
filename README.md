@@ -17,7 +17,6 @@ A deep reinforcement learning framework for Influence Maximization on large-scal
 - [Training](#training)
 - [Inference](#inference)
 - [Running Baselines](#running-baselines)
-- [Experiments](#experiments)
 - [Regenerating Training Data (Optional)](#regenerating-training-data-optional)
 - [Key Design Decisions](#key-design-decisions)
 - [Dependencies](#dependencies)
@@ -103,12 +102,6 @@ The fixed 5-dim representation is the key to zero-shot generalisation: training 
 | IMM | 81.2 ± 17.8 nodes | low (echo-chamber) | slow |
 | **Ours (α=1, β=10)** | 41 nodes avg. | **4.3 unique communities** | **milliseconds** |
 
-### Experiments: Reward Weight Trade-off
-
-| Config | Composite Reward | Behavior |
-|--------|-----------------|---------|
-| α=10, β=1 (influence-heavy) | — | Mimics CELF/IMM, hub-seeking |
-| **α=1, β=10 (community-heavy)** | **~9.4 avg** | Selects boundary-bridging nodes |
 
 - **Zero-shot inference:** Policy trained on 100-node subgraphs.
 - **Convergence:** Stable within 50–100 epochs; TD loss in range 10⁻⁵ to 10⁻³.
@@ -337,30 +330,6 @@ python run_imm_celf.py
 
 ---
 
-## Experiments
-
-Pre-run experiment results are saved in the following directories:
-
-| Directory | Config | Epochs |
-|-----------|--------|--------|
-| `Results_olddataset/` | Old dataset, default α/β | ~650 |
-| `results_newdataset/` | New dataset, default α/β | ~170 |
-| `a10b1/` | α=10, β=1 (influence-heavy) | ~240 |
-| `a1b10/` | α=1, β=10 (community-heavy) | ~110 |
-
-To reproduce experiments:
-
-```bash
-# Influence-dominant
-python main.py --graph train_graphs_new --community_path train_comms_new \
-    --alpha 10 --beta 1 --budget 5 --epoch 300 --model Tripling
-
-# Community-dominant
-python main.py --graph train_graphs_new --community_path train_comms_new \
-    --alpha 1 --beta 10 --budget 5 --epoch 300 --model Tripling
-```
-
----
 
 ## Regenerating Training Data (Optional)
 
