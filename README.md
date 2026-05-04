@@ -114,17 +114,18 @@ Below is a short visual demonstration of the training/inference pipeline and pol
 
 ### RL Agent vs. Classical Baselines
 
-| Method | Influence Spread | Communities Reached | Inference Time |
-|--------|-----------------|--------------------|-|
-| Random | low | low | instant |
-| Degree Centrality | moderate | low (echo-chamber) | instant |
-| CELF | 77 nodes (14% of 493-node graph) | low | **infeasible on large graphs** |
-| IMM | 81.2 ± 17.8 nodes | low (echo-chamber) | slow |
-| **Ours (α=1, β=10)** | 41 nodes avg. | **4.3 unique communities** | **milliseconds** |
+| Method | Influence Spread | Communities Reached | Seed Gen Time |
+|--------|-----------------|--------------------|--------------|
+| **Our Model (α=1, β=2)** | 593.84 nodes | 20.81 | 2,600.5 s |
+| IMM | 244.83 nodes | 6.02 | 104 s |
+| Original ToupleGDD | 245.44 nodes | 5.36 | 1,187 s |
+| Top-5 Degree Centrality | 48.85 nodes | 2.27 | -- |
+| Random Seeds (avg 20 runs) | 13.79 nodes | 0.99 | -- |
+| CELF | Infeasible (>4 hrs) | -- | >4 hrs |
 
 
 - **Zero-shot inference:** Policy trained on 100-node subgraphs.
-- **Convergence:** Stable within 50–100 epochs; TD loss in range 10⁻⁵ to 10⁻³.
+- **Convergence:** Stable within ~40 epochs
 
 ### Training Diagnostics
 
@@ -273,7 +274,7 @@ python main.py \
     --alpha 1.0 \
     --beta 2.0 \
     --bs 16 \
-    --epoch 20000 \
+    --epoch 2000 \
     --model Tripling \
     --model_file tripling.ckpt \
     --n_step 2
@@ -350,7 +351,7 @@ Replace `<TIMESTAMP_DIR>` with the directory created during training (e.g., `202
 ```bash
 cd touplegdd
 
-# Random baseline (averaged over 10 runs)
+# Random baseline (averaged over 20 runs)
 python baseline.py \
     --graph test_graph_new.txt \
     --community_path test_comms_new.txt \
